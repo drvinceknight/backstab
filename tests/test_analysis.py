@@ -147,7 +147,7 @@ def test_vlopt_dominates_random():
 
 def test_vlopt_known_value_8_2():
     vlopt_prob = backstab.traitor_win_prob_vlopt(8, 2)
-    assert vlopt_prob == fractions.Fraction(271, 288)
+    assert vlopt_prob == fractions.Fraction(23, 24)
 
 
 def test_vlopt_deviates_from_migdal_at_threshold():
@@ -158,3 +158,149 @@ def test_vlopt_deviates_from_migdal_at_threshold():
         assert vlopt_prob > migdal_prob, (
             f"w_†({n},{m})={vlopt_prob} should exceed w({n},{m})={migdal_prob}"
         )
+
+
+def test_vlopt_single_traitor_late_game_is_certain_win():
+    assert backstab.traitor_win_prob_vlopt(3, 1) == 1
+    assert backstab.traitor_win_prob_vlopt(4, 1) == 1
+
+
+def test_vlopt_known_values_single_traitor():
+    assert backstab.traitor_win_prob_vlopt(5, 1) == fractions.Fraction(4, 5)
+    assert backstab.traitor_win_prob_vlopt(6, 1) == fractions.Fraction(5, 6)
+
+
+# === Switching protocol win probability (w_s) ================================
+
+
+def test_switch_boundaries():
+    assert backstab.traitor_win_prob_switch(9, 0) == 0
+    assert backstab.traitor_win_prob_switch(4, 2) == 1
+
+
+def test_switch_equals_collusion_in_late_game():
+    for m in range(1, 4):
+        for n in (2 * m + 1, 2 * m + 2):
+            assert backstab.traitor_win_prob_switch(
+                n, m
+            ) == backstab.traitor_win_prob_collusion(n, m)
+
+
+def test_switch_equals_migdal_with_one_traitor():
+    for n in range(3, 20):
+        assert backstab.traitor_win_prob_switch(n, 1) == backstab.traitor_win_prob(n, 1)
+
+
+def test_switch_improves_on_vlopt_and_collusion():
+    for n in range(3, 26):
+        for m in range(1, math.ceil(n / 2)):
+            switch_prob = backstab.traitor_win_prob_switch(n, m)
+            assert switch_prob <= backstab.traitor_win_prob_vlopt(n, m)
+            assert switch_prob <= backstab.traitor_win_prob_collusion(n, m)
+
+
+def test_switch_known_value_15_2():
+    switch_prob = backstab.traitor_win_prob_switch(15, 2)
+    assert switch_prob == fractions.Fraction(246557, 411840)
+
+
+def enumerate_p_faithful_rv_collusion(n, m):
+    """Brute-force reference: enumerate every Faithful voting profile."""
+    import itertools
+
+    n_faithful = n - m
+    total_profiles = 0
+    faithful_banished = fractions.Fraction(0)
+    for votes in itertools.product(range(n), repeat=n_faithful):
+        if any(votes[voter] == voter for voter in range(n_faithful)):
+            continue
+        total_profiles += 1
+        vote_totals = [0] * n
+        for target in votes:
+            vote_totals[target] += 1
+        vote_totals[0] += m
+        max_votes = max(vote_totals)
+        tied_players = [
+            player for player, count in enumerate(vote_totals) if count == max_votes
+        ]
+        tied_faithful = [player for player in tied_players if player < n_faithful]
+        faithful_banished += fractions.Fraction(len(tied_faithful), len(tied_players))
+    return faithful_banished / total_profiles
+
+
+def test_collusion_banishment_matches_enumeration():
+    from backstab._analysis import _p_faithful_rv_collusion
+
+    for n in range(2, 9):
+        for m in range(1, n):
+            assert _p_faithful_rv_collusion(n, m) == enumerate_p_faithful_rv_collusion(
+                n, m
+            )
+
+
+def test_collusion_exact_in_televised_range():
+    for n, m in [(20, 3), (22, 3), (22, 4), (25, 4), (25, 5)]:
+        win_prob = backstab.traitor_win_prob_collusion(n, m)
+        assert 0 < win_prob < 1
+        assert win_prob > backstab.traitor_win_prob(n, m)
+
+
+def test_ordered_vote_boundaries():
+    assert backstab.traitor_win_prob_concentrated(5, 0) == 0
+    assert backstab.traitor_win_prob_concentrated(4, 2) == 1
+    assert backstab.traitor_win_prob_first_player(5, 0) == 0
+    assert backstab.traitor_win_prob_first_player(4, 2) == 1
+
+
+def test_first_player_with_one_traitor_from_three():
+    """The first player is banished; the Traitor is first with probability 1/3."""
+    assert backstab.traitor_win_prob_first_player(3, 1) == fractions.Fraction(2, 3)
+
+
+def test_concentrated_equals_first_player_in_the_late_game():
+    for m in range(1, 4):
+        for n in (2 * m + 1, 2 * m + 2):
+            assert backstab.traitor_win_prob_concentrated(
+                n, m
+            ) == backstab.traitor_win_prob_first_player(n, m)
+
+
+def test_planned_murders_beat_the_switching_profile():
+    """With planned murders the concentrated vote is worse for the Faithful."""
+    for n, m in [(9, 2), (12, 3), (15, 2)]:
+        assert backstab.traitor_win_prob_concentrated(
+            n, m
+        ) > backstab.traitor_win_prob_switch(n, m)
+        assert backstab.traitor_win_prob_first_player(n, m) > backstab.traitor_win_prob(
+            n, m
+        )
+
+
+def test_concentrated_matches_simulation():
+    n, m = 9, 2
+    game = backstab.TraitorsGame(n, m, detect=True, late_game_detection=False)
+    results = game.simulate(
+        faithful=backstab.FixedOrderThenFirst(n_traitors=m),
+        traitor=backstab.FixedOrderThenFirst(n_traitors=m),
+        murder=backstab.PlanningMurder(vote_left_main_game=True),
+        n=4000,
+        seed=0,
+    )
+    exact = 1 - float(backstab.traitor_win_prob_concentrated(n, m))
+    lower, upper = results.ci_95
+    assert lower <= exact <= upper
+
+
+def test_first_player_matches_simulation():
+    n, m = 9, 2
+    game = backstab.TraitorsGame(n, m, detect=False)
+    results = game.simulate(
+        faithful=backstab.FixedOrderThenFirst(n_traitors=n),
+        traitor=backstab.FixedOrderThenFirst(n_traitors=n),
+        murder=backstab.PlanningMurder(vote_left_main_game=False),
+        n=4000,
+        seed=0,
+    )
+    exact = 1 - float(backstab.traitor_win_prob_first_player(n, m))
+    lower, upper = results.ci_95
+    assert lower <= exact <= upper

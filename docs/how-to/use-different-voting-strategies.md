@@ -28,6 +28,8 @@ RampDeviation(p_start=0.0, p_end=1.0)
 ThresholdDeviation(threshold=8, p_late=1.0)
 >>> backstab.OptimalTimingDeviation()
 OptimalTimingDeviation()
+>>> backstab.FixedOrderThenRandom(n_traitors=3)
+FixedOrderThenRandom(n_traitors=3)
 
 ```
 
@@ -65,6 +67,20 @@ SimulationResults(n=1000, P(F)=0.985 [0.977,0.993], avg_rounds=4.0)
 
 ```python
 >>> game.simulate(n=1000, seed=0, faithful=backstab.FixedOrder(), traitor=backstab.OptimalTimingDeviation())
-SimulationResults(n=1000, P(F)=0.026 [0.016,0.036], avg_rounds=2.4)
+SimulationResults(n=1000, P(F)=0.018 [0.010,0.026], avg_rounds=2.4)
+
+```
+
+## Switch from Fixed Order to Random Voting in the late game
+
+Once \(n \leq 2m + 2\), colluding Traitors reach parity before any punishment can
+take place, so we can have the Faithful switch to random voting at that point. We
+switch off late-game detection so that the late-game random votes are not treated
+as deviations:
+
+```python
+>>> game = backstab.TraitorsGame(n_players=9, n_traitors=3, late_game_detection=False)
+>>> game.simulate(n=1000, seed=0, faithful=backstab.FixedOrderThenRandom(n_traitors=3), traitor=backstab.OptimalTimingDeviation())
+SimulationResults(n=1000, P(F)=0.055 [0.041,0.069], avg_rounds=2.4)
 
 ```

@@ -1,5 +1,6 @@
 import random
 
+from backstab._analysis import _ordered_vote_value
 from backstab._types import PlayerID, RoundRecord
 
 
@@ -241,8 +242,11 @@ class ThresholdDeviation:
 class OptimalTimingDeviation:
     """Deviate only when exact payoff analysis predicts it is profitable.
 
-    Deviates when n <= 2m + 2
-    Faithful always play FixedOrder.
+    Deviates when n <= 2m + 2 by colluding on a single Faithful target, which
+    forces that target's banishment. A sole surviving Traitor never targets
+    their own FixedOrder target, since voting for that player is not a
+    deviation and would leave every player with one vote. Faithful always play
+    FixedOrder.
     """
 
     def __init__(self) -> None:
@@ -269,6 +273,14 @@ class OptimalTimingDeviation:
             faithful_players = [
                 player for player in alive if player not in traitors and player != voter
             ]
+            if n_traitors_alive == 1:
+                own_target = self._fixed_order.vote(
+                    voter, alive, seating, traitors, is_traitor, history, known_traitors
+                )
+                forcing_targets = [
+                    player for player in faithful_players if player != own_target
+                ]
+                return random.choice(forcing_targets)
             if len(faithful_players) > 0:
                 return self._collusion.vote(
                     voter, alive, seating, traitors, is_traitor, history, known_traitors
@@ -279,6 +291,158 @@ class OptimalTimingDeviation:
 
     def __repr__(self) -> str:
         return "OptimalTimingDeviation()"
+
+
+class FixedOrderThenRandom:
+    """Play FixedOrder in the main game, then vote at random in the late game.
+
+    The late game is the set of states with n <= 2m + 2, in which punishment
+    can no longer deter a deviation because colluding Traitors reach parity
+    before the punishment round. The number of surviving Traitors is public:
+    it is the initial number of Traitors less those banished so far, which
+    the strategy reads from the game history. Use it with
+    ``TraitorsGame(..., late_game_detection=False)`` so that late-game votes
+    are not treated as deviations.
+
+    Parameters
+    ----------
+    n_traitors : int
+        The number of Traitors at the start of the game.
+
+    Raises
+    ------
+    ValueError
+        If ``n_traitors`` is less than one.
+    """
+
+    def __init__(self, n_traitors: int) -> None:
+        if n_traitors < 1:
+            raise ValueError(f"n_traitors must be at least 1, got {n_traitors}")
+        self.n_traitors = n_traitors
+        self._fixed_order = FixedOrder()
+        self._random_vote = RandomVote()
+
+    def vote(
+        self,
+        voter: PlayerID,
+        alive: list[PlayerID],
+        seating: list[PlayerID],
+        traitors: set[PlayerID],
+        is_traitor: bool,
+        history: list[RoundRecord],
+        known_traitors: set[PlayerID],
+    ) -> PlayerID:
+        banished_traitors = sum(1 for record in history if record["was_traitor"])
+        traitors_alive = self.n_traitors - banished_traitors
+        strategy = (
+            self._random_vote
+            if len(alive) <= 2 * traitors_alive + 2
+            else self._fixed_order
+        )
+        return strategy.vote(
+            voter, alive, seating, traitors, is_traitor, history, known_traitors
+        )
+
+    def __repr__(self) -> str:
+        return f"FixedOrderThenRandom(n_traitors={self.n_traitors})"
+
+
+class FixedOrderThenFirst:
+    r"""Play FixedOrder in the main game, then vote for the first player.
+
+    In the late game ($n \leq 2m + 2$) every player votes for the first
+    surviving player in the seating order, and that player votes for the
+    second, so the first player is banished whatever the Traitors do. The
+    number of surviving Traitors is read from the game history, as in
+    `FixedOrderThenRandom`. Use it with
+    ``TraitorsGame(..., late_game_detection=False)`` so that late-game votes
+    are not treated as deviations.
+
+    Parameters
+    ----------
+    n_traitors : int
+        The number of Traitors at the start of the game.
+
+    Raises
+    ------
+    ValueError
+        If ``n_traitors`` is less than one.
+    """
+
+    def __init__(self, n_traitors: int) -> None:
+        if n_traitors < 1:
+            raise ValueError(f"n_traitors must be at least 1, got {n_traitors}")
+        self.n_traitors = n_traitors
+        self._fixed_order = FixedOrder()
+
+    def vote(
+        self,
+        voter: PlayerID,
+        alive: list[PlayerID],
+        seating: list[PlayerID],
+        traitors: set[PlayerID],
+        is_traitor: bool,
+        history: list[RoundRecord],
+        known_traitors: set[PlayerID],
+    ) -> PlayerID:
+        banished_traitors = sum(1 for record in history if record["was_traitor"])
+        traitors_alive = self.n_traitors - banished_traitors
+        if len(alive) > 2 * traitors_alive + 2:
+            return self._fixed_order.vote(
+                voter, alive, seating, traitors, is_traitor, history, known_traitors
+            )
+        alive_set = set(alive)
+        ordered_alive = [player for player in seating if player in alive_set]
+        if ordered_alive[0] == voter:
+            return ordered_alive[1]
+        return ordered_alive[0]
+
+    def __repr__(self) -> str:
+        return f"FixedOrderThenFirst(n_traitors={self.n_traitors})"
+
+
+class PlanningMurder:
+    """Murder the Faithful player that is best for the Traitors.
+
+    For use when the Faithful vote for the first player in the order, either
+    throughout the game or in the late game only (see
+    `traitor_win_prob_concentrated`). The order is that of the player
+    identifiers, which is the seating order of `TraitorsGame`. The victim is
+    chosen by the exact dynamic programme behind
+    `traitor_win_prob_concentrated` and `traitor_win_prob_first_player`.
+
+    Parameters
+    ----------
+    vote_left_main_game : bool
+        Whether the Faithful play Vote-Left in the main game (true) or vote
+        for the first player throughout (false).
+    """
+
+    def __init__(self, vote_left_main_game: bool = True) -> None:
+        self.vote_left_main_game = vote_left_main_game
+
+    def choose_victim(
+        self,
+        traitors_alive: list[PlayerID],
+        faithful_alive: list[PlayerID],
+        history: list[RoundRecord],
+    ) -> PlayerID:
+        traitor_set = set(traitors_alive)
+        ordered_alive = sorted(traitors_alive + faithful_alive)
+        best_victim = faithful_alive[0]
+        best_value = -1.0
+        for victim in sorted(faithful_alive):
+            roles = tuple(
+                player in traitor_set for player in ordered_alive if player != victim
+            )
+            victim_value = _ordered_vote_value(roles, self.vote_left_main_game)
+            if victim_value > best_value:
+                best_victim = victim
+                best_value = victim_value
+        return best_victim
+
+    def __repr__(self) -> str:
+        return f"PlanningMurder(vote_left_main_game={self.vote_left_main_game})"
 
 
 class RandomMurder:

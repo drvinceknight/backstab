@@ -298,3 +298,35 @@ def test_night_history_passed_to_strategy():
     history = [{"banished": 5, "was_traitor": False}]
     backstab.TraitorsGame._night_phase(strategy, alive, traitors, faithful, history)
     assert strategy.received_history is history
+
+
+def test_late_game_detection_off_does_not_flag_late_game_collusion():
+    random.seed(0)
+    game = backstab.TraitorsGame(5, 2, detect=True, late_game_detection=False)
+    known_traitors: set[int] = set()
+    game._day_phase(
+        alive={0, 1, 2, 3, 4},
+        traitors={3, 4},
+        seating=[0, 1, 2, 3, 4],
+        faithful_strategy=backstab.FixedOrderThenRandom(n_traitors=2),
+        traitor_strategy=backstab.OptimalTimingDeviation(),
+        history=[],
+        known_traitors=known_traitors,
+    )
+    assert known_traitors == set()
+
+
+def test_late_game_detection_on_flags_late_game_collusion():
+    random.seed(0)
+    game = backstab.TraitorsGame(5, 2, detect=True)
+    known_traitors: set[int] = set()
+    game._day_phase(
+        alive={0, 1, 2, 3, 4},
+        traitors={3, 4},
+        seating=[0, 1, 2, 3, 4],
+        faithful_strategy=backstab.FixedOrder(),
+        traitor_strategy=backstab.OptimalTimingDeviation(),
+        history=[],
+        known_traitors=known_traitors,
+    )
+    assert 3 in known_traitors

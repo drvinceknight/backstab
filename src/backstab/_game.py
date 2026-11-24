@@ -12,6 +12,12 @@ from backstab._types import MurderStrategy, PlayerID, RoundRecord, VotingStrateg
 class TraitorsGame:
     """Monte Carlo simulation engine for TG(n, m).
 
+    When ``detect`` is true, votes that differ from the FixedOrder prescription
+    are detected and deviating Traitors are punished. When
+    ``late_game_detection`` is false, detection is switched off in late-game
+    states (n <= 2m + 2), where the Faithful no longer follow FixedOrder; any
+    punishment already under way is still carried out.
+
     Raises:
         ValueError: If player counts are invalid.
     """
@@ -21,6 +27,7 @@ class TraitorsGame:
         n_players: int = 22,
         n_traitors: int = 3,
         detect: bool = True,
+        late_game_detection: bool = True,
     ) -> None:
         if n_traitors >= n_players:
             raise ValueError("n_traitors must be < n_players")
@@ -31,6 +38,7 @@ class TraitorsGame:
         self.n_players = n_players
         self.n_traitors = n_traitors
         self.detect = detect
+        self.late_game_detection = late_game_detection
 
     def _day_phase(
         self,
@@ -69,7 +77,11 @@ class TraitorsGame:
                 known_traitors,
             )
 
-        if self.detect is True:
+        traitors_alive = len(alive & traitors)
+        in_late_game = len(alive) <= 2 * traitors_alive + 2
+        if self.detect is True and (
+            self.late_game_detection is True or in_late_game is False
+        ):
             deviators = detect_deviations(votes, alive_sorted, seating)
             known_traitors |= deviators & traitors
 

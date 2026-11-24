@@ -1,6 +1,9 @@
 from backstab._analysis import (
     traitor_win_prob,
     traitor_win_prob_collusion,
+    traitor_win_prob_concentrated,
+    traitor_win_prob_first_player,
+    traitor_win_prob_switch,
     traitor_win_prob_vlopt,
 )
 from backstab._detection import detect_deviations, fixed_order_target
@@ -9,8 +12,11 @@ from backstab._results import SimulationResults
 from backstab._strategies import (
     Collusion,
     FixedOrder,
+    FixedOrderThenFirst,
+    FixedOrderThenRandom,
     MixedDeviation,
     OptimalTimingDeviation,
+    PlanningMurder,
     RampDeviation,
     RandomMurder,
     RandomVote,
@@ -26,7 +32,12 @@ __all__ = [
     "traitor_win_prob",
     "traitor_win_prob_collusion",
     "traitor_win_prob_vlopt",
+    "traitor_win_prob_switch",
+    "traitor_win_prob_concentrated",
+    "traitor_win_prob_first_player",
     "FixedOrder",
+    "FixedOrderThenRandom",
+    "FixedOrderThenFirst",
     "RandomVote",
     "Collusion",
     "MixedDeviation",
@@ -34,6 +45,7 @@ __all__ = [
     "ThresholdDeviation",
     "OptimalTimingDeviation",
     "RandomMurder",
+    "PlanningMurder",
     "detect_deviations",
     "fixed_order_target",
     "SimulationResults",

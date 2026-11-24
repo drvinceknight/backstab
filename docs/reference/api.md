@@ -16,6 +16,16 @@ Complete reference for every public symbol in `backstab`.
 
 ::: backstab.traitor_win_prob
 
+::: backstab.traitor_win_prob_collusion
+
+::: backstab.traitor_win_prob_vlopt
+
+::: backstab.traitor_win_prob_switch
+
+::: backstab.traitor_win_prob_first_player
+
+::: backstab.traitor_win_prob_concentrated
+
 ::: backstab.faithful_win_prob
 
 ::: backstab.comply_value
@@ -52,11 +62,17 @@ Complete reference for every public symbol in `backstab`.
 
 ::: backstab.OptimalTimingDeviation
 
+::: backstab.FixedOrderThenRandom
+
+::: backstab.FixedOrderThenFirst
+
 ---
 
 ## Murder strategies
 
 ::: backstab.RandomMurder
+
+::: backstab.PlanningMurder
 
 ---
 
