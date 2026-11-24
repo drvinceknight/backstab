@@ -473,8 +473,155 @@ def test_optimal_timing_traitor_voting_gives_collusion_below_threshold_for_4_tra
     assert traitor_votes == {4}, f"Traitor votes {traitor_votes}"
 
 
+def test_optimal_timing_single_traitor_never_votes_own_fixed_order_target():
+    optimal_timing_deviation = backstab.OptimalTimingDeviation()
+    for n_alive in (3, 4):
+        alive = list(range(n_alive))
+        for traitor in alive:
+            own_target = backstab.fixed_order_target(traitor, alive, alive)
+            for _ in range(50):
+                vote = optimal_timing_deviation.vote(
+                    voter=traitor,
+                    alive=alive,
+                    seating=alive,
+                    traitors={traitor},
+                    is_traitor=True,
+                    history=[],
+                    known_traitors=set(),
+                )
+                assert vote not in (traitor, own_target)
+
+
+def test_optimal_timing_single_traitor_always_wins_late_game():
+    for n_players in (3, 4):
+        game = backstab.TraitorsGame(n_players, 1, detect=True)
+        result = game.simulate(
+            faithful=backstab.FixedOrder(),
+            traitor=backstab.OptimalTimingDeviation(),
+            n=500,
+            seed=0,
+        )
+        assert result.traitor_wins == 500
+
+
+def test_optimal_timing_matches_exact_vlopt():
+    game = backstab.TraitorsGame(9, 2, detect=True)
+    result = game.simulate(
+        faithful=backstab.FixedOrder(),
+        traitor=backstab.OptimalTimingDeviation(),
+        n=20_000,
+        seed=0,
+    )
+    exact = float(backstab.traitor_win_prob_vlopt(9, 2))
+    assert abs(result.traitor_win_rate - exact) < 0.01
+
+
+# === FixedOrderThenRandom ====================================================
+
+
+def test_fixed_order_then_random_repr():
+    assert (
+        repr(backstab.FixedOrderThenRandom(3)) == "FixedOrderThenRandom(n_traitors=3)"
+    )
+
+
+def test_fixed_order_then_random_rejects_no_traitors():
+    with pytest.raises(ValueError):
+        backstab.FixedOrderThenRandom(0)
+
+
+def test_fixed_order_then_random_plays_fixed_order_in_main_game():
+    switch_strategy = backstab.FixedOrderThenRandom(n_traitors=2)
+    alive = list(range(7))
+    for voter in alive:
+        vote = switch_strategy.vote(voter, alive, alive, set(), False, [], set())
+        assert vote == backstab.fixed_order_target(voter, alive, alive)
+
+
+def test_fixed_order_then_random_votes_randomly_in_late_game():
+    random.seed(0)
+    switch_strategy = backstab.FixedOrderThenRandom(n_traitors=2)
+    alive = list(range(6))
+    votes = {
+        switch_strategy.vote(0, alive, alive, set(), False, [], set())
+        for _ in range(200)
+    }
+    assert votes == {1, 2, 3, 4, 5}
+
+
+def test_fixed_order_then_random_counts_banished_traitors_from_history():
+    switch_strategy = backstab.FixedOrderThenRandom(n_traitors=2)
+    alive = list(range(6))
+    history = [{"banished": 9, "was_traitor": True}]
+    for voter in alive:
+        vote = switch_strategy.vote(voter, alive, alive, set(), False, history, set())
+        assert vote == backstab.fixed_order_target(voter, alive, alive)
+
+
+def test_fixed_order_then_random_matches_exact_switch():
+    game = backstab.TraitorsGame(9, 2, detect=True, late_game_detection=False)
+    result = game.simulate(
+        faithful=backstab.FixedOrderThenRandom(n_traitors=2),
+        traitor=backstab.OptimalTimingDeviation(),
+        n=20_000,
+        seed=0,
+    )
+    exact = float(backstab.traitor_win_prob_switch(9, 2))
+    assert abs(result.traitor_win_rate - exact) < 0.01
+
+
 # === RandomMurder ============================================================
 
 
 def test_random_murder_repr():
     assert repr(backstab.RandomMurder()) == "RandomMurder()"
+
+
+# === FixedOrderThenFirst =====================================================
+
+
+def test_fixed_order_then_first_repr():
+    assert repr(backstab.FixedOrderThenFirst(3)) == "FixedOrderThenFirst(n_traitors=3)"
+
+
+def test_fixed_order_then_first_rejects_no_traitors():
+    with pytest.raises(ValueError):
+        backstab.FixedOrderThenFirst(0)
+
+
+def test_fixed_order_then_first_plays_fixed_order_in_main_game():
+    strategy = backstab.FixedOrderThenFirst(n_traitors=2)
+    alive = list(range(8))
+    assert strategy.vote(3, alive, alive, {0, 1}, False, [], set()) == 4
+
+
+def test_fixed_order_then_first_votes_for_first_in_late_game():
+    strategy = backstab.FixedOrderThenFirst(n_traitors=2)
+    alive = [1, 2, 4, 5, 6]
+    seating = list(range(8))
+    assert strategy.vote(5, alive, seating, {4, 6}, False, [], set()) == 1
+    assert strategy.vote(1, alive, seating, {4, 6}, False, [], set()) == 2
+
+
+# === PlanningMurder ==========================================================
+
+
+def test_planning_murder_repr():
+    assert repr(backstab.PlanningMurder()) == "PlanningMurder(vote_left_main_game=True)"
+
+
+def test_planning_murder_spares_the_faithful_in_front():
+    """Under a fixed order the Traitor murders a Faithful behind them."""
+    murder = backstab.PlanningMurder(vote_left_main_game=False)
+    victim = murder.choose_victim(
+        traitors_alive=[2], faithful_alive=[0, 1, 3, 4, 5, 6], history=[]
+    )
+    assert victim == 3
+
+
+def test_planning_murder_returns_a_faithful_player():
+    murder = backstab.PlanningMurder(vote_left_main_game=True)
+    victim = murder.choose_victim(
+        traitors_alive=[2, 5], faithful_alive=[0, 1, 3, 4, 6, 7, 8], history=[]
+    )
+    assert victim in {0, 1, 3, 4, 6, 7, 8}
